@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 inotify = "0.11.0"
-tokio = {version = "1.40.0", features = ["rt-multi-thread", "macros","rt"] }
+linux-stat = "0.3.3"
+
 
 [build-dependencies]
 bindgen = "0.65.1"
