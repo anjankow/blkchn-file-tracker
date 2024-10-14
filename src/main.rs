@@ -1,3 +1,4 @@
+mod consumer;
 mod dir_watcher;
 mod event;
 
