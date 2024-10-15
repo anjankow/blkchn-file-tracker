@@ -5,6 +5,7 @@ use {
         account_info::AccountInfo, entrypoint::ProgramResult, msg, program_error::ProgramError,
         pubkey::Pubkey,
     },
+    solana_sdk::signer::Signer,
     std::str::from_utf8,
 };
 
@@ -14,19 +15,7 @@ pub fn process_instruction(
     accounts: &[AccountInfo],
     input: &[u8],
 ) -> ProgramResult {
-    let account_info_iter = &mut accounts.iter();
-    let mut missing_required_signature = false;
-    for account_info in account_info_iter {
-        if let Some(address) = account_info.signer_key() {
-            msg!("Signed by {:?}", address);
-        } else {
-            missing_required_signature = true;
-        }
-    }
-    if missing_required_signature {
-        return Err(ProgramError::MissingRequiredSignature);
-    }
-
+    log_accounts(accounts);
     let memo = from_utf8(input).map_err(|err| {
         msg!("Invalid UTF-8, from byte {}", err.valid_up_to());
         ProgramError::InvalidInstructionData
@@ -34,6 +23,34 @@ pub fn process_instruction(
     msg!("Memo (len {}): {:?}", memo.len(), memo);
 
     Ok(())
+}
+
+fn log_accounts(accounts: &[AccountInfo]) {
+    msg!("Accounts num: {}", accounts.len());
+    for account_info in accounts.iter() {
+        let mut account_log = String::from(format!(
+            "account: {:x?} | owner: {:x?} | signer: {:x?} | lamp: {}",
+            fmt_pubkey(account_info.key),
+            account_info
+                .signer_key()
+                .map(|k| fmt_pubkey(k))
+                .unwrap_or(String::from("NO SIGNER")),
+            fmt_pubkey(account_info.owner),
+            account_info.lamports()
+        ));
+        if account_info.data_is_empty() {
+            account_log += " | NO DATA | ";
+        } else {
+            account_log += " |  data existing";
+        }
+        msg!(&account_log);
+    }
+}
+
+fn fmt_pubkey(key: &Pubkey) -> String {
+    let mut res = key.to_string();
+    res.truncate(6);
+    res
 }
 
 #[cfg(test)]
