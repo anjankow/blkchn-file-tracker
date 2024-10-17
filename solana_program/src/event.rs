@@ -58,6 +58,12 @@ pub struct FileInfo {
     pub mode: u32, // libc::mode_t;
 }
 
+impl OffsetDateTime {
+    pub fn from(t: time::OffsetDateTime) -> Self {
+        OffsetDateTime { 0: t }
+    }
+}
+
 impl BorshSerialize for OffsetDateTime {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         let unix_timestamp = self.0.unix_timestamp_nanos();
