@@ -1301,6 +1301,7 @@ dependencies = [
  "chrono",
  "num-derive",
  "num-traits",
+ "solana-client",
  "solana-program",
  "solana-program-test",
  "solana-sdk",
