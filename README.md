@@ -68,4 +68,6 @@ EqWRXakMW7rJvT4dMUd1uUdNyKbbvEP48kK9NCevfAJ4 | 1768      | E617pwHkquBHUPAqcThYY
 ## Watch
 https://explorer.solana.com/?cluster=custom
 
-
+```sh
+solana logs
+```

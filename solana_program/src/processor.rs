@@ -1,12 +1,8 @@
 //! Program state processor
 
-use {
-    solana_program::{
-        account_info::AccountInfo, entrypoint::ProgramResult, msg, program_error::ProgramError,
-        pubkey::Pubkey,
-    },
-    solana_sdk::signer::Signer,
-    std::str::from_utf8,
+use solana_program::{
+    account_info::AccountInfo, entrypoint::ProgramResult, msg, program_error::ProgramError,
+    pubkey::Pubkey,
 };
 
 /// Instruction processor
@@ -16,11 +12,8 @@ pub fn process_instruction(
     input: &[u8],
 ) -> ProgramResult {
     log_accounts(accounts);
-    let memo = from_utf8(input).map_err(|err| {
-        msg!("Invalid UTF-8, from byte {}", err.valid_up_to());
-        ProgramError::InvalidInstructionData
-    })?;
-    msg!("Memo (len {}): {:?}", memo.len(), memo);
+
+    msg!("Hello, this is me. Data len: {}", input.len());
 
     Ok(())
 }

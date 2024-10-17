@@ -45,7 +45,7 @@ fn test_add_event() {
     // prepare the instruction
     // first, find the program id
     let program_id = env::var("PROGRAM_ID")
-        .unwrap_or("EqWRXakMW7rJvT4dMUd1uUdNyKbbvEP48kK9NCevfAJ4".to_string());
+        .unwrap_or("FTa31aKNoLQJTW3C2XazWemfnWWbHckaRzaYzLR25Wio".to_string());
     let program: Pubkey = program_id
         .parse::<Pubkey>()
         .expect("Invalid program id (check ${PROGRAM_ID})");
