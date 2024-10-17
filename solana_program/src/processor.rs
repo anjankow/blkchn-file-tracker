@@ -1,9 +1,31 @@
 //! Program state processor
-
+use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use solana_program::{
-    account_info::AccountInfo, entrypoint::ProgramResult, msg, program_error::ProgramError,
+    account_info::{next_account_info, AccountInfo},
+    entrypoint,
+    entrypoint::ProgramResult,
+    msg,
+    program_error::ProgramError,
     pubkey::Pubkey,
+    rent::Rent,
+    system_instruction,
+    sysvar::Sysvar,
 };
+
+use crate::event;
+
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, BorshSchema)]
+struct AccountData {
+    last_file_events: std::collections::HashMap<String, event::Event>,
+}
+
+impl Default for AccountData {
+    fn default() -> Self {
+        AccountData {
+            last_file_events: std::collections::HashMap::<String, event::Event>::new(),
+        }
+    }
+}
 
 /// Instruction processor
 pub fn process_instruction(
@@ -13,7 +35,72 @@ pub fn process_instruction(
 ) -> ProgramResult {
     log_accounts(accounts);
 
-    msg!("Hello, this is me. Data len: {}", input.len());
+    let start = time::OffsetDateTime::now_utc();
+
+    if accounts.len() < 1 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+
+    let account_info_iter = &mut accounts.iter();
+    let account = solana_program::account_info::next_account_info(account_info_iter)?;
+
+    // parse the input event
+    let mut data = input;
+    let event = event::Event::deserialize(&mut data);
+    if event.is_err() {
+        // invalid input data
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    let event = event?;
+
+    msg!(
+        "Event generated: {:?} | Received by this program in: {} ns",
+        event
+            .received_at
+            .0
+            .time()
+            .as_hms_nano(),
+        (start.unix_timestamp_nanos()
+            - event
+                .received_at
+                .0
+                .unix_timestamp_nanos()),
+    );
+
+    let mut account_data =
+        AccountData::try_from_slice(&account.data.borrow()).unwrap_or(AccountData::default());
+    msg!("Borrowed account data");
+
+    // track only the latest event in the account data,
+    // all events are available from the transactions payload
+    // (stored on the blockchain)
+    let _ = account_data
+        .last_file_events
+        .get(&event.file_name)
+        .is_some_and(|old_event| {
+            msg!(
+                "{file_name} | Replacing last file event {old_event} with a new one {new_event}",
+                file_name = &event.file_name,
+                old_event = old_event.event_type,
+                new_event = &event.event_type
+            );
+            true
+        });
+
+    // store new account data
+    account_data
+        .last_file_events
+        .insert(event.file_name.clone(), event.clone());
+    account_data.serialize(&mut &mut account.data.borrow_mut()[..])?;
+
+    msg!(
+        "New event: {} {} | TOTAL: {} files",
+        event.event_type,
+        event.file_name,
+        account_data
+            .last_file_events
+            .len(),
+    );
 
     Ok(())
 }

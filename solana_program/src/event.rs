@@ -29,7 +29,7 @@ impl Display for EventType {
 
 #[derive(Clone, Debug, PartialEq)]
 
-pub struct OffsetDateTime(time::OffsetDateTime);
+pub struct OffsetDateTime(pub time::OffsetDateTime);
 
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, BorshSchema)]

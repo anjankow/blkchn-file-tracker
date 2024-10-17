@@ -51,6 +51,8 @@ solana airdrop 500
 ```
 
 ## Deploy
+https://docs.solanalabs.com/cli/examples/deploy-a-program
+
 ```sh
 solana program deploy ./target/deploy/file_event_tracker.so
 ```
@@ -65,9 +67,46 @@ Program Id                                   | Slot      | Authority            
 EqWRXakMW7rJvT4dMUd1uUdNyKbbvEP48kK9NCevfAJ4 | 1768      | E617pwHkquBHUPAqcThYYmw1Wbhcwy1vq8V4vnPpAfMY | 0.4321116 SOL
 ```
 
+### List all buffers
+Program Buffer - a temporary account that stores byte code while a program is being actively deployed or upgraded. Once the process is complete, the data is transferred to the Program Executable Data Account and the buffer account is closed.
+```sh
+solana program show --buffers
+```
+```plain
+Buffer Address                               | Authority                                    | Balance
+65imwR88tsyxgwXcfnE27ENpzkbbrKkhUktU5mZJT2Kw | E617pwHkquBHUPAqcThYYmw1Wbhcwy1vq8V4vnPpAfMY | 1.03802136 SOL
+7vq2GPfJhEzvxzyHCmWQAxiBvvjmFY8L36HV1MGeTv9W | E617pwHkquBHUPAqcThYYmw1Wbhcwy1vq8V4vnPpAfMY | 1.03802136 SOL
+DPVboTdank8b42AFBu74SHbH8uFirWBv4Y9tLDLGPV7V | E617pwHkquBHUPAqcThYYmw1Wbhcwy1vq8V4vnPpAfMY | 1.03802136 SOL
+```
+
+### Close program
+```sh
+solana program close <address>
+```
+
 ## Watch
 https://explorer.solana.com/?cluster=custom
 
 ```sh
 solana logs
+```
+
+## Common problems
+### Solana program deploy
+#### Account data too small for instruction
+```plain
+Error: Deploying program failed: RPC response error -32002: Transaction simulation failed: Error processing Instruction 0: account data too small for instruction [3 log messages]
+```
+You'll need to extend your program size.
+```sh
+solana program extend FTa31aKNoLQJTW3C2XazWemfnWWbHckaRzaYzLR25Wio 20000 -u l -k ${HOME}/.config/solana/id.json 
+```
+`FTa31aKN...` PROGRAM_ID
+
+`20000` ADDITIONAL_BYTES
+
+```plain
+-u, --url <URL_OR_MONIKER>             URL for Solana's JSON RPC or moniker (or their first letter): [mainnet-beta,
+                                           testnet, devnet, localhost]
+-k, --keypair <KEYPAIR>                Filepath or URL to a keypair
 ```
