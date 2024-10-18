@@ -1,4 +1,6 @@
 //! Program state processor
+use std::io::Write;
+
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -81,13 +83,18 @@ pub fn process_instruction(
             true
         });
 
-    // store new account data
+    // update the account_data value with the new event
     account_data
         .last_file_events
         .insert(event.file_path.clone(), event.clone());
     let mut serialized = Vec::<u8>::new();
     account_data.serialize(&mut serialized)?;
-    // account_data.serialize(&mut &mut account.data.borrow_mut()[..])?;
+
+    // check how much space is needed and increase it
+    account.realloc(serialized.len(), false)?;
+    // store new account data
+    // yes, pointless serialization yet another time...
+    account_data.serialize(&mut &mut account.data.borrow_mut()[..])?;
 
     msg!(
         "New event: {} {} | TOTAL: {} files",
