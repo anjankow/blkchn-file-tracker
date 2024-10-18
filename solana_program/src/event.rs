@@ -27,42 +27,92 @@ impl Display for EventType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-
-pub struct OffsetDateTime(pub time::OffsetDateTime);
-
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Event {
-    pub file_name: String,
-    pub received_at: OffsetDateTime,
+    pub file_path: String,
     pub event_type: EventType,
 
+    // Unix timestamp, marks the time when this even has been
+    // received by the dir watcher and its processing started.
+    // Assigned according to SOLANA CLOCK, not the system clock.
+    pub solana_ts_received_at: i128,
     pub file_info: Option<FileInfo>,
 }
 
 impl Display for Event {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.file_name, self.event_type)
+        write!(f, "{}: {}", self.file_path, self.event_type)
     }
 }
 
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct FileInfo {
-    pub access_ts: Option<OffsetDateTime>,
-    pub modify_ts: Option<OffsetDateTime>,
-    pub created_ts: Option<OffsetDateTime>,
+    pub access_ts: Option<i128>,  // unix timestamp
+    pub modify_ts: Option<i128>,  // unix timestamp
+    pub created_ts: Option<i128>, // unix timestamp
 
     pub size: u64,
     pub mode: u32, // libc::mode_t;
 }
 
-impl OffsetDateTime {
-    pub fn from(t: time::OffsetDateTime) -> Self {
-        OffsetDateTime { 0: t }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_event_serialization() {
+        let event = Event {
+            file_path: "name.txt".to_string(),
+            event_type: EventType::MovedTo,
+            solana_ts_received_at: 55543119,
+            file_info: Some(FileInfo {
+                access_ts: Some(34242),
+                created_ts: None,
+                modify_ts: Some(2221212),
+                mode: 433,
+                size: 100000000,
+            }),
+        };
+
+        let mut buf: Vec<u8> = Vec::new();
+        event
+            .serialize(&mut buf)
+            .unwrap();
+
+        println!("Size of an event: {}", buf.len());
+
+        let deserialized = Event::deserialize(&mut buf.as_slice()).unwrap();
+        assert_eq!(event, deserialized);
+    }
+
+    #[test]
+    fn test_event_serialization_no_file_info() {
+        let event = Event {
+            file_path: "name.txt".to_string(),
+            event_type: EventType::Written,
+            solana_ts_received_at: 55543119,
+            file_info: None,
+        };
+
+        let mut buf: Vec<u8> = Vec::new();
+        event
+            .serialize(&mut buf)
+            .unwrap();
+
+        println!("Size of an event: {}", buf.len());
+
+        let deserialized = Event::deserialize(&mut buf.as_slice()).unwrap();
+        assert_eq!(event, deserialized);
     }
 }
+
+/*
+BORSH SERIALIZATION for OffsetDateTime
+//////////////////////////////////////
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OffsetDateTime(time::OffsetDateTime);
 
 impl BorshSerialize for OffsetDateTime {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
@@ -126,3 +176,4 @@ mod tests {
         debug_assert_eq!(res, time);
     }
 }
+*/

@@ -4,14 +4,11 @@ use borsh::BorshSerialize;
 use file_event_tracker as et;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
-    address_lookup_table::program,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
     signer::Signer,
-    system_instruction, system_program,
     transaction::Transaction,
 };
-use time::OffsetDateTime;
 
 #[test]
 fn test_add_event() {
@@ -28,29 +25,31 @@ fn test_add_event() {
     println!("Wallet keys obtained from: {}", wallet_keypair_path);
     let wallet = solana_sdk::signer::keypair::read_keypair_file(wallet_keypair_path).unwrap();
 
+    // solana current time
+    let slot = client.get_slot().unwrap();
+    let now = client
+        .get_block_time(slot)
+        .unwrap() as i128;
     // create event data
     let data = et::event::Event {
         event_type: et::event::EventType::Written,
-        file_name: "file1.txt".to_string(),
-        received_at: et::event::OffsetDateTime::from(time::OffsetDateTime::now_utc()),
+        file_path: "/home/user/file1.txt".to_string(),
+        solana_ts_received_at: now,
         file_info: None,
     };
     let mut serialized_data = Vec::<u8>::new();
     data.serialize(&mut serialized_data)
         .unwrap();
 
-    // check what is the rent for storing such data
-    let reserved_space = serialized_data.len();
-
     // prepare the instruction
     // first, find the program id
     let program_id = env::var("PROGRAM_ID")
-        .unwrap_or("FTa31aKNoLQJTW3C2XazWemfnWWbHckaRzaYzLR25Wio".to_string());
+        .unwrap_or("BtzKw3sZRdNd8DqToNSd8KRLVU9jYemcEJEgHWupKDjd".to_string());
     let program: Pubkey = program_id
         .parse::<Pubkey>()
         .expect("Invalid program id (check ${PROGRAM_ID})");
     let accounts = [AccountMeta::new(wallet.pubkey(), true)].to_vec();
-    let instruction = Instruction::new_with_borsh(program, &serialized_data, accounts);
+    let instruction = Instruction::new_with_bytes(program, &serialized_data, accounts);
 
     let recent_blockhash = client
         .get_latest_blockhash()

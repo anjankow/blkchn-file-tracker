@@ -8,7 +8,7 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
     rent::Rent,
-    system_instruction,
+    system_instruction, sysvar,
     sysvar::Sysvar,
 };
 
@@ -33,10 +33,12 @@ pub fn process_instruction(
     accounts: &[AccountInfo],
     input: &[u8],
 ) -> ProgramResult {
+    let now = sysvar::clock::Clock::get()
+        .ok()
+        .unwrap()
+        .unix_timestamp as i128;
+
     log_accounts(accounts);
-
-    let start = time::OffsetDateTime::now_utc();
-
     if accounts.len() < 1 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
@@ -49,38 +51,30 @@ pub fn process_instruction(
     let event = event::Event::deserialize(&mut data);
     if event.is_err() {
         // invalid input data
+        msg!("Can't deserialize the input: {:?}", event.err().unwrap());
         return Err(ProgramError::InvalidInstructionData);
     }
     let event = event?;
 
     msg!(
-        "Event generated: {:?} | Received by this program in: {} ns",
-        event
-            .received_at
-            .0
-            .time()
-            .as_hms_nano(),
-        (start.unix_timestamp_nanos()
-            - event
-                .received_at
-                .0
-                .unix_timestamp_nanos()),
+        "Event generated: {:?} | Received by this program in: {} s",
+        event.solana_ts_received_at,
+        (now - event.solana_ts_received_at),
     );
 
     let mut account_data =
         AccountData::try_from_slice(&account.data.borrow()).unwrap_or(AccountData::default());
-    msg!("Borrowed account data");
 
     // track only the latest event in the account data,
     // all events are available from the transactions payload
     // (stored on the blockchain)
     let _ = account_data
         .last_file_events
-        .get(&event.file_name)
+        .get(&event.file_path)
         .is_some_and(|old_event| {
             msg!(
-                "{file_name} | Replacing last file event {old_event} with a new one {new_event}",
-                file_name = &event.file_name,
+                "{file_path} | Replacing last file event {old_event} with a new one {new_event}",
+                file_path = &event.file_path,
                 old_event = old_event.event_type,
                 new_event = &event.event_type
             );
@@ -90,13 +84,15 @@ pub fn process_instruction(
     // store new account data
     account_data
         .last_file_events
-        .insert(event.file_name.clone(), event.clone());
-    account_data.serialize(&mut &mut account.data.borrow_mut()[..])?;
+        .insert(event.file_path.clone(), event.clone());
+    let mut serialized = Vec::<u8>::new();
+    account_data.serialize(&mut serialized)?;
+    // account_data.serialize(&mut &mut account.data.borrow_mut()[..])?;
 
     msg!(
         "New event: {} {} | TOTAL: {} files",
         event.event_type,
-        event.file_name,
+        event.file_path,
         account_data
             .last_file_events
             .len(),
@@ -137,74 +133,42 @@ fn fmt_pubkey(key: &Pubkey) -> String {
 mod tests {
     use {
         super::*,
+        event::EventType,
         solana_program::{
             account_info::IntoAccountInfo, program_error::ProgramError, pubkey::Pubkey,
         },
-        solana_sdk::account::Account,
+        solana_sdk::account::{Account, ReadableAccount, WritableAccount},
+        std::io::Write,
     };
 
     #[test]
-    fn test_utf8_memo() {
-        let program_id = Pubkey::new_from_array([0; 32]);
+    fn test_serialize_account_data() {
+        let mut account_data = AccountData::default();
+        account_data
+            .last_file_events
+            .insert(
+                "path".to_string(),
+                event::Event {
+                    file_path: "path".to_string(),
+                    event_type: EventType::AttributeChanged,
+                    solana_ts_received_at: 123,
+                    file_info: None,
+                },
+            );
 
-        let string = b"letters and such";
-        assert_eq!(Ok(()), process_instruction(&program_id, &[], string));
+        let pubkey = Pubkey::new_unique();
+        let mut account = Account::default();
+        // account.data.reserve(100); // <-- this panics
+        account.data.resize(111, 0); // <-- this works
+        let account_info = (&pubkey, true, &mut account).into_account_info();
 
-        let emoji = "🐆".as_bytes();
-        let bytes = [0xF0, 0x9F, 0x90, 0x86];
-        assert_eq!(emoji, bytes);
-        assert_eq!(Ok(()), process_instruction(&program_id, &[], emoji));
-
-        let mut bad_utf8 = bytes;
-        bad_utf8[3] = 0xFF; // Invalid UTF-8 byte
-        assert_eq!(
-            Err(ProgramError::InvalidInstructionData),
-            process_instruction(&program_id, &[], &bad_utf8)
-        );
-    }
-
-    #[test]
-    fn test_signers() {
-        let program_id = Pubkey::new_from_array([0; 32]);
-        let memo = "🐆".as_bytes();
-
-        let pubkey0 = Pubkey::new_unique();
-        let pubkey1 = Pubkey::new_unique();
-        let pubkey2 = Pubkey::new_unique();
-        let mut account0 = Account::default();
-        let mut account1 = Account::default();
-        let mut account2 = Account::default();
-
-        let signed_account_infos = vec![
-            (&pubkey0, true, &mut account0).into_account_info(),
-            (&pubkey1, true, &mut account1).into_account_info(),
-            (&pubkey2, true, &mut account2).into_account_info(),
-        ];
-        assert_eq!(
-            Ok(()),
-            process_instruction(&program_id, &signed_account_infos, memo)
-        );
-
-        assert_eq!(Ok(()), process_instruction(&program_id, &[], memo));
-
-        let unsigned_account_infos = vec![
-            (&pubkey0, false, &mut account0).into_account_info(),
-            (&pubkey1, false, &mut account1).into_account_info(),
-            (&pubkey2, false, &mut account2).into_account_info(),
-        ];
-        assert_eq!(
-            Err(ProgramError::MissingRequiredSignature),
-            process_instruction(&program_id, &unsigned_account_infos, memo)
-        );
-
-        let partially_signed_account_infos = vec![
-            (&pubkey0, true, &mut account0).into_account_info(),
-            (&pubkey1, false, &mut account1).into_account_info(),
-            (&pubkey2, true, &mut account2).into_account_info(),
-        ];
-        assert_eq!(
-            Err(ProgramError::MissingRequiredSignature),
-            process_instruction(&program_id, &partially_signed_account_infos, memo)
+        account_data
+            .serialize(&mut &mut account_info.data.borrow_mut()[..])
+            .unwrap();
+        println!(
+            "account_info data len: {}, account data len: {}",
+            account_info.data_len(),
+            account.data().len()
         );
     }
 }
