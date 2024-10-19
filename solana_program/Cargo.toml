@@ -12,17 +12,17 @@ borsh = "1.5.1"
 chrono = "0.4.38"
 num-derive = "0.4.2"
 num-traits = "0.2.19"
-zeroize = { version = "1.7", default-features = false }
 solana-program = "2.0.13"
 thiserror = "1.0.64"
 time = "0.3.36"
 serde_json = "1.0.131"
-ureq = { version = "2.10.1", features = ["json"] }
 
 [dev-dependencies]
 solana-program-test = "2.0.13"
 solana-sdk = "2.0.13"
 solana-client = "2.0.13"
+ureq = { version = "2.10.1", features = ["json"] }
+zeroize = { version = "1.7", default-features = false }
 
 [lib]
 crate-type = ["cdylib", "lib"]

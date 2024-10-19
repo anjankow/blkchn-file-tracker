@@ -4,10 +4,10 @@ use {
     borsh::{BorshDeserialize, BorshSchema, BorshSerialize},
     solana_program::{
         instruction::{AccountMeta, Instruction},
+        msg,
         program_error::ProgramError,
         pubkey::Pubkey,
     },
-    solana_sdk::msg,
     std::mem::size_of,
 };
 
@@ -22,10 +22,10 @@ pub struct InitializeInstructionData {
     pub pda_bump_seed: u8,
 }
 
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct ReallocateInstructionData {
-    data_length: u64,
-}
+// #[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, BorshSchema)]
+// pub struct ReallocateInstructionData {
+//     data_length: u64,
+// }
 
 /// Instructions supported by the program
 #[derive(Clone, Debug, PartialEq)]
@@ -54,17 +54,16 @@ pub enum EventTrackerInstruction {
     /// 0. `[writable, signer]` User account, PDA owner.
     /// 1. `[writable]` User's PDA
     CloseAccount,
-
-    /// Reallocate additional space in the user's PDA
-    ///
-    /// If the record account already has enough space to hold the specified
-    /// data length, then the instruction does nothing.
-    ///
-    /// Accounts expected by this instruction:
-    ///
-    /// 0. `[writable, signer]` User account, PDA owner.
-    /// 1. `[writable]` User's PDA
-    Reallocate(ReallocateInstructionData),
+    // /// Reallocate additional space in the user's PDA
+    // ///
+    // /// If the record account already has enough space to hold the specified
+    // /// data length, then the instruction does nothing.
+    // ///
+    // /// Accounts expected by this instruction:
+    // ///
+    // /// 0. `[writable, signer]` User account, PDA owner.
+    // /// 1. `[writable]` User's PDA
+    // Reallocate(ReallocateInstructionData),
 }
 
 impl EventTrackerInstruction {
@@ -94,14 +93,7 @@ impl EventTrackerInstruction {
                 Self::AddEvent(instruction_data)
             }
             2 => Self::CloseAccount,
-            3 => {
-                let instruction_data =
-                    ReallocateInstructionData::deserialize(&mut data).map_err(|e| {
-                        msg!("Failed to deserialize instruction body: {}", e);
-                        return ProgramError::InvalidInstructionData;
-                    })?;
-                Self::Reallocate(instruction_data)
-            }
+
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -119,10 +111,6 @@ impl EventTrackerInstruction {
                 data.serialize(&mut buf)?;
             }
             Self::CloseAccount => buf.push(2),
-            Self::Reallocate(data) => {
-                buf.push(3);
-                data.serialize(&mut buf)?;
-            }
         };
         Ok(buf)
     }

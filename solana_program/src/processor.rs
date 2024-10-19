@@ -1,5 +1,5 @@
 //! Program state processor
-use std::io::Write;
+use std::{io, thread::panicking};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use solana_program::{
@@ -14,7 +14,12 @@ use solana_program::{
     sysvar::Sysvar,
 };
 
-use crate::event;
+use crate::{
+    event,
+    instruction::{self, EventTrackerInstruction},
+};
+
+pub const VAULT_ACCOUNT_SIZE: u64 = 1024;
 
 #[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, BorshSchema)]
 struct AccountData {
@@ -31,46 +36,102 @@ impl Default for AccountData {
 
 /// Instruction processor
 pub fn process_instruction(
-    _program_id: &Pubkey,
+    program_id: &Pubkey,
     accounts: &[AccountInfo],
     input: &[u8],
+) -> ProgramResult {
+    // The first account is always the pda owner, the end user's wallet.
+    // This user needs to sign each transaction.
+    let account_info_iter = &mut accounts.iter();
+    let payer = solana_program::account_info::next_account_info(account_info_iter)?;
+    if !payer.is_signer || payer.signer_key().is_none() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+
+    let instr = EventTrackerInstruction::unpack(input)?;
+    match instr {
+        EventTrackerInstruction::Initialize(initialize_instruction_data) => {
+            process_initialize(program_id, accounts, initialize_instruction_data)
+        }
+        EventTrackerInstruction::AddEvent(add_event_instruction_data) => {
+            process_add_event(program_id, accounts, add_event_instruction_data)
+        }
+        EventTrackerInstruction::CloseAccount => todo!(),
+    }
+}
+
+pub fn process_initialize(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    input: instruction::InitializeInstructionData,
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let payer = solana_program::account_info::next_account_info(account_info_iter)?;
+    if !payer.is_writable {
+        return Err(ProgramError::Immutable);
+    }
+    let pda = solana_program::account_info::next_account_info(account_info_iter)?;
+    if !pda.is_writable {
+        return Err(ProgramError::Immutable);
+    }
+
+    // Used to uniquely identify this PDA among others.
+    let mut pda_seed = "vault:".to_string();
+    pda_seed.push_str(&payer.key.to_string());
+
+    // Invoke the system program to create an account while virtually
+    // signing with the vault PDA, which is owned by this caller program.
+    solana_program::program::invoke_signed(
+        &system_instruction::create_account_with_seed(
+            payer.key,
+            pda.key,
+            program_id,
+            &pda_seed,
+            input.lamports,
+            VAULT_ACCOUNT_SIZE,
+            program_id,
+        ),
+        &[payer.clone(), pda.clone()],
+        &[&[b"vault", payer.key.as_ref()]],
+    )
+}
+
+pub fn process_add_event(
+    _program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    input: instruction::AddEventInstructionData,
 ) -> ProgramResult {
     let now = sysvar::clock::Clock::get()
         .ok()
         .unwrap()
         .unix_timestamp as i128;
-
-    log_accounts(accounts);
-    if accounts.len() < 1 {
-        return Err(ProgramError::NotEnoughAccountKeys);
-    }
-
-    let account_info_iter = &mut accounts.iter();
-    let account = solana_program::account_info::next_account_info(account_info_iter)?;
-
-    // parse the input event
-    let mut data = input;
-    let event = event::Event::deserialize(&mut data);
-    if event.is_err() {
-        // invalid input data
-        msg!("Can't deserialize the input: {:?}", event.err().unwrap());
-        return Err(ProgramError::InvalidInstructionData);
-    }
-    let event = event?;
-
+    let event = input.event;
     msg!(
         "Event generated: {:?} | Received by this program in: {} s",
         event.solana_ts_received_at,
         (now - event.solana_ts_received_at),
     );
 
-    let mut account_data =
-        AccountData::try_from_slice(&account.data.borrow()).unwrap_or(AccountData::default());
+    log_accounts(accounts);
+
+    let account_info_iter = &mut accounts.iter();
+    let payer = solana_program::account_info::next_account_info(account_info_iter)?;
+    if !payer.is_writable {
+        return Err(ProgramError::Immutable);
+    }
+    // Vault is the user's PDA created with Initialize.
+    let vault = solana_program::account_info::next_account_info(account_info_iter)?;
+    if !vault.is_writable {
+        return Err(ProgramError::Immutable);
+    }
+
+    let mut vault_data =
+        AccountData::try_from_slice(&vault.data.borrow()).unwrap_or(AccountData::default());
 
     // track only the latest event in the account data,
     // all events are available from the transactions payload
     // (stored on the blockchain)
-    let _ = account_data
+    let _ = vault_data
         .last_file_events
         .get(&event.file_path)
         .is_some_and(|old_event| {
@@ -84,23 +145,23 @@ pub fn process_instruction(
         });
 
     // update the account_data value with the new event
-    account_data
+    vault_data
         .last_file_events
         .insert(event.file_path.clone(), event.clone());
     let mut serialized = Vec::<u8>::new();
-    account_data.serialize(&mut serialized)?;
+    vault_data.serialize(&mut serialized)?;
 
     // check how much space is needed and increase it
-    account.realloc(serialized.len(), false)?;
+    vault.realloc(serialized.len(), false)?;
     // store new account data
-    // yes, pointless serialization yet another time...
-    account_data.serialize(&mut &mut account.data.borrow_mut()[..])?;
+    vault.data.borrow_mut()[..].copy_from_slice(&serialized);
+    println!("Value updated, data size: {}", vault.data_len());
 
     msg!(
         "New event: {} {} | TOTAL: {} files",
         event.event_type,
         event.file_path,
-        account_data
+        vault_data
             .last_file_events
             .len(),
     );
