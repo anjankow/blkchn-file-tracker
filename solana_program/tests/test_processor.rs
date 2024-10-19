@@ -26,15 +26,13 @@ fn test_add_event() {
     let wallet = solana_sdk::signer::keypair::read_keypair_file(wallet_keypair_path).unwrap();
 
     // solana current time
-    let slot = client.get_slot().unwrap();
-    let now = client
-        .get_block_time(slot)
-        .unwrap() as i128;
+    let solana_current_time = get_solana_unix_timestamp(&client.url()).unwrap() as i128;
+
     // create event data
     let data = et::event::Event {
         event_type: et::event::EventType::Written,
         file_path: "/home/user/file1.txt".to_string(),
-        solana_ts_received_at: now,
+        solana_ts_received_at: solana_current_time as i128,
         file_info: None,
     };
     let mut serialized_data = Vec::<u8>::new();
@@ -67,6 +65,55 @@ fn test_add_event() {
         .send_transaction(&transaction)
         .unwrap();
     println!("Client signature: {}", client_signature.to_string());
+}
+
+fn get_solana_unix_timestamp(url: &str) -> Result<i64, ureq::Error> {
+    let sysvar_clock_address = "SysvarC1ock11111111111111111111111111111111";
+
+    let req_body = ureq::json!({
+    "jsonrpc": "2.0",
+    "id": 1,
+        "method": "getAccountInfo",
+        "params": [
+            sysvar_clock_address,
+            {
+                "encoding": "jsonParsed",
+            },
+        ],
+    });
+
+    // https://solana.com/docs/rpc/http/getaccountinfo
+    let recv_body: std::collections::HashMap<String, serde_json::Value> = ureq::post(&url)
+        .send_json(&req_body)?
+        .into_json()?;
+    // println!("recv body: {:?}", recv_body);
+
+    let res = recv_body
+        .get("result")
+        .and_then(|res| res.get("value"))
+        .and_then(|res| res.get("data"))
+        .and_then(|res| res.get("parsed"))
+        .and_then(|res| res.get("info"))
+        .and_then(|res| res.get("unixTimestamp"));
+
+    let res = res
+        .map(|r| r.as_i64().unwrap())
+        .or_else(|| {
+            println!(
+            "Failed to find unixTimestamp in the response, returning the system's unix_timestamp");
+            println!("{:?}", recv_body);
+            // we will ignore this error and just return current system time for tests
+            Some(time::OffsetDateTime::now_utc().unix_timestamp())
+        })
+        .unwrap();
+    Ok(res)
+}
+
+#[test]
+fn test_get_solana_unix_timestamp() {
+    let res = get_solana_unix_timestamp("http://localhost:8899").unwrap();
+    assert!(res > 0);
+    println!("{}", res);
 }
 
 fn get_rpc_client() -> solana_client::rpc_client::RpcClient {
