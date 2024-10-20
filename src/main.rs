@@ -1,9 +1,12 @@
-mod consumer;
 mod dir_watcher;
+mod error;
 mod event;
+mod solana_client;
 
 fn main() {
-    let dir = "./c"; // path relative to Cargo.toml
+    let dir = "./tmp"; // path relative to Cargo.toml
+    let solana_url = "http://127.0.0.1:8899";
+
     let (tx, rx) = std::sync::mpsc::channel();
     let event_types = vec![
         event::EventType::AttributeChanged,
@@ -23,7 +26,7 @@ fn main() {
     });
 
     // And pass the events to the consumer
-    for event in rx {
-        println!("Consumer received event: {}", event);
-    }
+    solana_client::SolanaClient::new(solana_url)
+        .process_events(rx)
+        .expect("Should never return");
 }

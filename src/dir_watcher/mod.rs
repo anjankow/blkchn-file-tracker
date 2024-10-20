@@ -1,6 +1,8 @@
+use crate::error::Error;
 use crate::event::{self, Event, EventType, FileInfo};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::time::SystemTime;
 use std::{collections::HashMap, fmt::Display, io, sync::mpsc};
 
 pub struct DirWatcher {
@@ -43,13 +45,13 @@ impl DirWatcher {
                 let _ = tx
                     .send(event.clone())
                     .and_then(|_| {
-                        println!("Event reported: {} {:?}", event.event_type, event.file_name);
+                        println!("Event reported: {} {:?}", event.event_type, event.file_path);
                         Ok(())
                     })
                     .is_err_and(|e| {
                         println!(
                             "Failed to send event of a file: {:?}, reason: {}",
-                            event.file_name, e
+                            event.file_path, e
                         );
                         false
                     });
@@ -67,11 +69,16 @@ impl DirWatcher {
         let mut ret_events = Vec::new();
 
         for ie in inotify_events {
-            let file_name = match ie.name {
+            let file_path = match ie.name {
                 // We care only about the events with associated file names
                 None => continue,
-                Some(n) => n
-                    .to_string_lossy()
+                Some(n) => std::path::Path::new(&self.dir)
+                    .join(
+                        n.to_string_lossy()
+                            .to_string(),
+                    )
+                    .to_str()
+                    .unwrap()
                     .to_string(),
             };
 
@@ -82,23 +89,23 @@ impl DirWatcher {
             };
 
             // Now we get the file metadata, if not present in the map
-            let file_info = match file_infos.get(&file_name) {
+            let file_info = match file_infos.get(&file_path) {
                 Some(fi) => Some(fi.clone()),
-                None => match self.read_file_metadata(&file_name) {
+                None => match self.read_file_metadata(&file_path) {
                     Err(e) => {
                         if !e
-                            .kind
+                            .io_kind()
                             // To skip errors reported by potentially deleted files
                             .is_some_and(|e| e == io::ErrorKind::NotFound)
                         {
-                            println!("Failed to read file info of a file {}: {}", file_name, e);
+                            println!("Failed to read file info of a file {}: {}", file_path, e);
                         }
                         None
                     }
                     Ok(fi) => {
                         // We want to store it in our map, maybe there are more events
                         // associated with this file in the input events.
-                        file_infos.insert(file_name.clone(), fi.clone());
+                        file_infos.insert(file_path.clone(), fi.clone());
                         Some(fi)
                     }
                 },
@@ -113,7 +120,8 @@ impl DirWatcher {
 
                 ret_events.push(Event {
                     event_type: event_type,
-                    file_name: file_name.clone(),
+                    file_path: file_path.clone(),
+                    solana_ts_received_at: 0, // filled in by the listener
                     file_info: file_info,
                 });
             }
@@ -121,47 +129,32 @@ impl DirWatcher {
         Ok(ret_events)
     }
 
-    fn read_file_metadata(&self, file_name: &str) -> Result<FileInfo, Error> {
-        let path = std::path::Path::new(self.dir.as_str()).join(file_name);
-        let metadata = fs::metadata(path)?;
+    fn read_file_metadata(&self, file_path: &str) -> Result<FileInfo, Error> {
+        let metadata = fs::metadata(file_path)?;
+
+        let to_unix_ts = |t: std::time::SystemTime| -> i128 {
+            match t.duration_since(SystemTime::UNIX_EPOCH) {
+                Ok(n) => n.as_secs().into(),
+                Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+            }
+        };
 
         Ok(FileInfo {
             size: metadata.len(),
             mode: metadata.permissions().mode(),
-            access_ts: metadata.accessed().ok(),
-            modify_ts: metadata.modified().ok(),
-            created_ts: metadata.created().ok(),
+            access_ts: metadata
+                .accessed()
+                .ok()
+                .map(|t| to_unix_ts(t)),
+            modify_ts: metadata
+                .modified()
+                .ok()
+                .map(|t| to_unix_ts(t)),
+            created_ts: metadata
+                .created()
+                .ok()
+                .map(|t| to_unix_ts(t)),
         })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Error {
-    kind: Option<io::ErrorKind>,
-    message: String,
-}
-
-impl Error {
-    pub fn new(message: &str) -> Error {
-        Error {
-            kind: None,
-            message: message.to_string(),
-        }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error {
-            kind: Some(err.kind()),
-            message: err.to_string(),
-        }
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Error: {}", self.message)
     }
 }
 

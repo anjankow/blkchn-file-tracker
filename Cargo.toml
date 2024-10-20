@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+borsh = "1.5.1"
 inotify = "0.11.0"
 linux-stat = "0.3.3"
-
+solana-sdk = "2.0.13"
 
 [build-dependencies]
 bindgen = "0.65.1"
