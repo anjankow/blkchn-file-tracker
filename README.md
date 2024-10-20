@@ -1,3 +1,7 @@
+# Playground solana program tracking file events
+Why? For fun. The app watches a given directory and reports
+all file events (e.g. created, written, deleted) to the solana program. Solana program stores only the latest event of a file.
+
 # Deploy solana program locally
 From https://solana.com/developers/guides/getstarted/local-rust-hello-world
 
