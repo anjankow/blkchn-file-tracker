@@ -3,7 +3,7 @@ use crate::event::{self, Event, EventType, FileInfo};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::time::SystemTime;
-use std::{collections::HashMap, fmt::Display, io, sync::mpsc};
+use std::{collections::HashMap, io, sync::mpsc};
 
 pub struct DirWatcher {
     inotify: inotify::Inotify,

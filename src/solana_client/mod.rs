@@ -5,7 +5,7 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::Keypair,
     signer::Signer,
-    transaction::{Transaction, TransactionError},
+    transaction::Transaction,
 };
 
 use crate::event::Event;
@@ -36,17 +36,23 @@ impl SolanaClient {
         &self,
         rx: std::sync::mpsc::Receiver<Event>,
     ) -> Result<(), crate::error::Error> {
-        for mut event in rx {
+        if self.pda.is_none() {
+            return Err(crate::error::Error::new(
+                "PDA has to be initialized for this call",
+            ));
+        }
+
+        for event in rx {
             println!("Consumer received an event: {}", event);
 
-            if let Err(err) = self.process_event(&mut event) {
+            if let Err(err) = self.process_event(event) {
                 println!("Failed to process the event: {}", err);
             }
         }
         Ok(())
     }
 
-    fn process_event(&self, event: &mut Event) -> Result<(), crate::error::Error> {
+    fn process_event(&self, mut event: Event) -> Result<(), crate::error::Error> {
         // todo: add cache to call not more often than every second
         let ts = self.get_solana_unix_timestamp();
         if let Ok(ts_ok) = ts {
@@ -54,6 +60,43 @@ impl SolanaClient {
         } else {
             event.solana_ts_received_at = -1;
         }
+
+        // accounts needed by the transaction
+        let accounts = [
+            AccountMeta::new(self.wallet.pubkey(), true),
+            AccountMeta::new(self.pda.unwrap(), false),
+            // no CPIs, no more accounts needed
+        ]
+        .to_vec();
+
+        //// prepare instruction
+
+        let instr_data =
+            instruction::EventTrackerInstruction::AddEvent(instruction::AddEventInstructionData {
+                event: event,
+            })
+            .pack()?;
+
+        let instruction = Instruction::new_with_bytes(self.program, &instr_data, accounts);
+
+        let blockhash = self
+            .rpc_client
+            .get_latest_blockhash()
+            .map_err(|e| crate::error::Error::new(&e.to_string()))?;
+
+        let transaction = Transaction::new_signed_with_payer(
+            &[instruction],
+            Some(&self.wallet.pubkey()),
+            &[&self.wallet],
+            blockhash,
+        );
+
+        println!("Sending to RPC client");
+        let client_signature = self
+            .rpc_client
+            .send_and_confirm_transaction(&transaction)
+            .map_err(|e| crate::error::Error::new(&e.to_string()))?;
+        println!("Client signature: {}", client_signature.to_string());
 
         Ok(())
     }

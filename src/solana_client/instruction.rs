@@ -2,15 +2,9 @@
 /// File added by build.rs, do not modify directly.
 /// Modify the corresponding file in solana_sdk/ instead.
 /// ///////////////////////////////////////////////////////////
-
 use {
     borsh::{BorshDeserialize, BorshSchema, BorshSerialize},
-    solana_sdk::{
-        instruction::{AccountMeta, Instruction},
-        msg,
-        program_error::ProgramError,
-        pubkey::Pubkey,
-    },
+    solana_sdk::{msg, program_error::ProgramError},
     std::mem::size_of,
 };
 
