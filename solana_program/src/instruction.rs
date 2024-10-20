@@ -35,7 +35,8 @@ pub enum EventTrackerInstruction {
     /// Accounts expected by this instruction:
     ///
     /// 0. `[writable, signer]` User account, PDA owner.
-    /// 1. `[]` PDA found with Pubkey::find_program_address for this user.
+    /// 1. `[writable]` PDA found with Pubkey::find_program_address for this user.
+    /// 2. `[]` System program used to create a new account.
     Initialize(InitializeInstructionData),
 
     /// Add new event to the user's PDA

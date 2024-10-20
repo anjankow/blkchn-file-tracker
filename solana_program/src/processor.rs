@@ -20,6 +20,7 @@ use crate::{
 };
 
 pub const VAULT_ACCOUNT_SIZE: u64 = 1024;
+pub const PDA_SEED_PREFIX: &[u8] = b"vault";
 
 #[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, BorshSchema)]
 struct AccountData {
@@ -70,29 +71,37 @@ pub fn process_initialize(
     if !payer.is_writable {
         return Err(ProgramError::Immutable);
     }
+    if !payer.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
     let pda = solana_program::account_info::next_account_info(account_info_iter)?;
     if !pda.is_writable {
         return Err(ProgramError::Immutable);
     }
+    // System program needs to come from the outside
+    let system_program = solana_program::account_info::next_account_info(account_info_iter)?;
 
     // Used to uniquely identify this PDA among others.
-    let mut pda_seed = "vault:".to_string();
-    pda_seed.push_str(&payer.key.to_string());
+    let pda_seed = &[
+        /* passed to find_program_address */ PDA_SEED_PREFIX,
+        /* passed to find_program_address */ payer.key.as_ref(),
+        /* pda_bump_seed calculated by find_program_address
+        and expected on account retrieval */
+        &[input.pda_bump_seed],
+    ];
 
     // Invoke the system program to create an account while virtually
     // signing with the vault PDA, which is owned by this caller program.
     solana_program::program::invoke_signed(
-        &system_instruction::create_account_with_seed(
+        &system_instruction::create_account(
             payer.key,
             pda.key,
-            program_id,
-            &pda_seed,
             input.lamports,
             VAULT_ACCOUNT_SIZE,
             program_id,
         ),
-        &[payer.clone(), pda.clone()],
-        &[&[b"vault", payer.key.as_ref()]],
+        &[payer.clone(), pda.clone(), system_program.clone()],
+        &[pda_seed],
     )
 }
 

@@ -24,16 +24,13 @@ fn test_create_pda() {
 
     let program = get_program();
 
-    // Derive the PDA from the payer account, a string representing the unique
-    // purpose of the account ("vault"), and the address of our on-chain program.
-    let seeds = &[b"vault", payer_key.as_ref()];
-    let (pda_pubkey, pda_bump_seed) = Pubkey::find_program_address(seeds, &program);
-
     // Get the amount of lamports needed to pay for the vault's rent
     let vault_account_size = usize::try_from(et::processor::VAULT_ACCOUNT_SIZE).unwrap();
     let lamports = client
         .get_minimum_balance_for_rent_exemption(vault_account_size)
         .unwrap();
+
+    let (pda_pubkey, pda_bump_seed) = derive_user_pda(&program, &payer_key);
 
     // The on-chain program's instruction data, imported from that program's crate.
     let instr_data = et::instruction::EventTrackerInstruction::Initialize(
@@ -50,7 +47,7 @@ fn test_create_pda() {
     let accounts = vec![
         AccountMeta::new(payer.pubkey(), true /* is_signer */),
         AccountMeta::new(pda_pubkey, false),
-        AccountMeta::new(solana_sdk::system_program::ID, false),
+        AccountMeta::new_readonly(solana_sdk::system_program::ID, false),
     ];
 
     // Create the instruction by serializing our instruction data via borsh
@@ -70,6 +67,14 @@ fn test_create_pda() {
     client
         .send_and_confirm_transaction(&transaction)
         .unwrap();
+}
+
+fn derive_user_pda(program: &Pubkey, payer: &Pubkey) -> (Pubkey, u8) {
+    // Derive the PDA from the payer account, a string representing the unique
+    // purpose of the account ("vault"), and the address of our on-chain program.
+    let seeds = &[et::processor::PDA_SEED_PREFIX, payer.as_ref()];
+    let (pda_pubkey, pda_bump_seed) = Pubkey::find_program_address(seeds, &program);
+    (pda_pubkey, pda_bump_seed)
 }
 
 #[test]
