@@ -1,6 +1,6 @@
 //// //////////////////////////////////////////////////////////
 /// File added by build.rs, do not modify directly.
-/// Modify solana_program/src/event.rs instead.
+/// Modify the corresponding file in solana_sdk/ instead.
 /// ///////////////////////////////////////////////////////////
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};

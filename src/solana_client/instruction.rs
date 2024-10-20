@@ -1,6 +1,11 @@
+//// //////////////////////////////////////////////////////////
+/// File added by build.rs, do not modify directly.
+/// Modify the corresponding file in solana_sdk/ instead.
+/// ///////////////////////////////////////////////////////////
+
 use {
     borsh::{BorshDeserialize, BorshSchema, BorshSerialize},
-    solana_program::{
+    solana_sdk::{
         instruction::{AccountMeta, Instruction},
         msg,
         program_error::ProgramError,

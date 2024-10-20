@@ -45,7 +45,7 @@ impl DirWatcher {
                 let _ = tx
                     .send(event.clone())
                     .and_then(|_| {
-                        println!("Event reported: {} {:?}", event.event_type, event.file_path);
+                        // println!("Event reported: {} {:?}", event.event_type, event.file_path);
                         Ok(())
                     })
                     .is_err_and(|e| {

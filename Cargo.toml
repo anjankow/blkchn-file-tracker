@@ -8,7 +8,15 @@ borsh = "1.5.1"
 inotify = "0.11.0"
 linux-stat = "0.3.3"
 solana-sdk = "2.0.13"
+ureq = { version = "2.10.1", features = ["json"] }
+serde_json = "1.0.131"
+zeroize = { version = "1.7", default-features = false }
+solana-client = "2.0.13"
 
 [build-dependencies]
 bindgen = "0.65.1"
 walkdir = "2.3.3"
+
+# https://github.com/solana-labs/solana/issues/26688#issuecomment-2411153994
+[patch.crates-io]
+curve25519-dalek = { git = "https://github.com/anza-xyz/curve25519-dalek.git", rev = "b500cdc2a920cd5bff9e2dd974d7b97349d61464" }
