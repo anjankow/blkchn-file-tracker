@@ -1,7 +1,7 @@
 use std::env;
 
-use borsh::BorshSerialize;
-use file_event_tracker as et;
+use borsh::{BorshSchema, BorshSerialize};
+use file_event_tracker::{self as et, instruction};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
@@ -81,45 +81,193 @@ fn derive_user_pda(program: &Pubkey, payer: &Pubkey) -> (Pubkey, u8) {
 fn test_add_event() {
     let client = get_rpc_client();
 
+    // program id
+    let program = get_program();
+
     // payer keys
     let wallet = get_wallet();
+    let (pda_pubkey, _ /* we need bump only to create the PDA */) =
+        derive_user_pda(&program, &wallet.pubkey());
 
+    // accounts needed by the transaction
+    let accounts = [
+        AccountMeta::new(wallet.pubkey(), true),
+        AccountMeta::new(pda_pubkey, false),
+        // no CPIs, no more accounts needed
+    ]
+    .to_vec();
+
+    //// prepare instruction
     // solana current time
     let solana_current_time = get_solana_unix_timestamp(&client.url()).unwrap() as i128;
 
     // create event data
-    let data = et::event::Event {
+    let event = et::event::Event {
         event_type: et::event::EventType::Written,
-        file_path: "/home/user/file1.txt".to_string(),
+        file_path: "/home/user/file2.txt".to_string(),
         solana_ts_received_at: solana_current_time as i128,
         file_info: None,
     };
-    let mut serialized_data = Vec::<u8>::new();
-    data.serialize(&mut serialized_data)
-        .unwrap();
+    let instr_data = et::instruction::EventTrackerInstruction::AddEvent(
+        et::instruction::AddEventInstructionData { event },
+    )
+    .pack()
+    .unwrap();
 
-    // prepare the instruction
-    // first, find the program id
-    let program = get_program();
-    let accounts = [AccountMeta::new(wallet.pubkey(), true)].to_vec();
-    let instruction = Instruction::new_with_bytes(program, &serialized_data, accounts);
+    let instruction = Instruction::new_with_bytes(program, &instr_data, accounts);
 
-    let recent_blockhash = client
+    let blockhash = client
         .get_latest_blockhash()
         .unwrap();
 
-    // now invoke the instruction with a new transaction
-    let transaction: Transaction = Transaction::new_signed_with_payer(
+    let transaction = Transaction::new_signed_with_payer(
         &[instruction],
         Some(&wallet.pubkey()),
-        &[&wallet],
-        recent_blockhash,
+        &[wallet],
+        blockhash,
     );
 
     let client_signature = client
-        .send_transaction(&transaction)
+        .send_and_confirm_transaction(&transaction)
         .unwrap();
     println!("Client signature: {}", client_signature.to_string());
+}
+
+#[test]
+fn test_add_multiple_events_one_transaction() {
+    let client = get_rpc_client();
+
+    // program id
+    let program = get_program();
+
+    // payer keys
+    let wallet = get_wallet();
+    let (pda_pubkey, _ /* we need bump only to create the PDA */) =
+        derive_user_pda(&program, &wallet.pubkey());
+
+    // accounts needed by the transaction
+    let accounts = [
+        AccountMeta::new(wallet.pubkey(), true),
+        AccountMeta::new(pda_pubkey, false),
+        // no CPIs, no more accounts needed
+    ]
+    .to_vec();
+
+    //// prepare instruction
+
+    // pack 20 instructions in a single transaction
+    let types = [
+        et::event::EventType::Created,
+        et::event::EventType::MovedFrom,
+        et::event::EventType::Written,
+        et::event::EventType::AttributeChanged,
+        et::event::EventType::Deleted,
+    ];
+    let files = ["file1", "file2", "file3", "file4"];
+
+    let mut instructions = Vec::<Instruction>::new();
+    let mut event = get_event_for_testing();
+    for event_type in types {
+        for file in files {
+            event.event_type = event_type.clone();
+            event.file_path = file.to_string();
+            let instr_data = et::instruction::EventTrackerInstruction::AddEvent(
+                et::instruction::AddEventInstructionData {
+                    event: event.clone(),
+                },
+            )
+            .pack()
+            .unwrap();
+
+            instructions.push(Instruction::new_with_bytes(
+                program,
+                &instr_data,
+                accounts.clone(),
+            ));
+        }
+    }
+
+    let blockhash = client
+        .get_latest_blockhash()
+        .unwrap();
+
+    let transaction = Transaction::new_signed_with_payer(
+        instructions.as_slice(),
+        Some(&wallet.pubkey()),
+        &[wallet],
+        blockhash,
+    );
+
+    let client_signature = client
+        .send_and_confirm_transaction(&transaction)
+        .unwrap();
+    println!("Client signature: {}", client_signature.to_string());
+}
+
+#[test]
+fn test_add_multiple_events_mutli_transactions() {
+    let client = get_rpc_client();
+
+    // program id
+    let program = get_program();
+
+    // payer keys
+    let wallet = get_wallet();
+    let (pda_pubkey, _ /* we need bump only to create the PDA */) =
+        derive_user_pda(&program, &wallet.pubkey());
+
+    // accounts needed by the transaction
+    let accounts = [
+        AccountMeta::new(wallet.pubkey(), true),
+        AccountMeta::new(pda_pubkey, false),
+        // no CPIs, no more accounts needed
+    ]
+    .to_vec();
+
+    //// prepare instruction
+
+    // prepare 20 instructions for 20 transactions
+    let types = [
+        et::event::EventType::Created,
+        et::event::EventType::MovedFrom,
+        et::event::EventType::Written,
+        et::event::EventType::AttributeChanged,
+        et::event::EventType::Deleted,
+    ];
+    let files = ["file11", "file12", "file13", "file14"];
+
+    let blockhash = client
+        .get_latest_blockhash()
+        .unwrap();
+
+    let mut event = get_event_for_testing();
+    for event_type in types {
+        for file in files {
+            event.event_type = event_type.clone();
+            event.file_path = file.to_string();
+            let instr_data = et::instruction::EventTrackerInstruction::AddEvent(
+                et::instruction::AddEventInstructionData {
+                    event: event.clone(),
+                },
+            )
+            .pack()
+            .unwrap();
+
+            let instruction = Instruction::new_with_bytes(program, &instr_data, accounts.clone());
+
+            let transaction = Transaction::new_signed_with_payer(
+                &[instruction],
+                Some(&wallet.pubkey()),
+                &[wallet.insecure_clone()],
+                blockhash,
+            );
+
+            let client_signature = client
+                .send_and_confirm_transaction(&transaction)
+                .unwrap();
+            println!("Client signature: {}", client_signature.to_string());
+        }
+    }
 }
 
 fn get_event_for_testing() -> et::event::Event {

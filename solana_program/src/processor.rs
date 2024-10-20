@@ -110,18 +110,18 @@ pub fn process_add_event(
     accounts: &[AccountInfo],
     input: instruction::AddEventInstructionData,
 ) -> ProgramResult {
-    let now = sysvar::clock::Clock::get()
-        .ok()
-        .unwrap()
-        .unix_timestamp as i128;
+    // let now = sysvar::clock::Clock::get()
+    //     .ok()
+    //     .unwrap()
+    //     .unix_timestamp as i128;
     let event = input.event;
-    msg!(
-        "Event generated: {:?} | Received by this program in: {} s",
-        event.solana_ts_received_at,
-        (now - event.solana_ts_received_at),
-    );
+    // msg!(
+    //     "Event generated: {:?} | Received by this program in: {} s",
+    //     event.solana_ts_received_at,
+    //     (now - event.solana_ts_received_at),
+    // );
 
-    log_accounts(accounts);
+    // log_accounts(accounts);
 
     let account_info_iter = &mut accounts.iter();
     let payer = solana_program::account_info::next_account_info(account_info_iter)?;
@@ -164,15 +164,16 @@ pub fn process_add_event(
     vault.realloc(serialized.len(), false)?;
     // store new account data
     vault.data.borrow_mut()[..].copy_from_slice(&serialized);
-    println!("Value updated, data size: {}", vault.data_len());
+    // println!("Value updated, data size: {}", vault.data_len());
 
     msg!(
-        "New event: {} {} | TOTAL: {} files",
+        "New event: {} {} | TOTAL: {} files | New size: {}",
         event.event_type,
         event.file_path,
         vault_data
             .last_file_events
             .len(),
+        serialized.len(),
     );
 
     Ok(())
