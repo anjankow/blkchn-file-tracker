@@ -109,10 +109,14 @@ impl SolanaClient {
             .rpc_client
             .send_and_confirm_transaction(&transaction);
         if let Err(e) = signature {
-            if e.get_transaction_error()
-                .is_some_and(|e| e.eq(&solana_sdk::transaction::TransactionError::AccountInUse))
+            // If the account already exists, instead of TransactionError::AccountInUse
+            // the retuned error is custom program error: 0x0.
+            // Therefore we will just parse the error string searching for
+            // `already in use` term instead of checking the error type.
+            if e.to_string()
+                .contains("already in use")
             {
-                println!("Account already existing");
+                println!("Wallet's PDA already exists");
                 self.pda = Some(pda_pubkey);
                 return Ok(());
             } else {
